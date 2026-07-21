@@ -1,9 +1,8 @@
 import streamlit as st
 import spotipy
-import plotly.graph_objects as go
 import plotly.express as px
 from mood_detector import detect_mood
-from spotify_client import get_recommendations, get_spotify_oauth, get_spotify_from_token
+from spotify_client import get_recommendations, get_spotify_oauth
 from auth import sign_up, sign_in, update_country
 from database import save_session, get_user_history, get_mood_stats
 from location import COUNTRY_LIST
@@ -80,6 +79,17 @@ html, body, [class*="css"] {
 }
 .stButton > button:hover { background: #1ed760 !important; transform: scale(1.02) !important; }
 
+.stLinkButton a {
+    background: #1DB954 !important; color: #000000 !important;
+    border: none !important; border-radius: 50px !important;
+    padding: 0.7rem 2rem !important; font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.9rem !important; font-weight: 700 !important;
+    width: 100% !important; display: block !important;
+    text-align: center !important; text-decoration: none !important;
+    transition: all 0.2s ease !important;
+}
+.stLinkButton a:hover { background: #1ed760 !important; }
+
 .emotion-bar-container { margin: 0.4rem 0; }
 .emotion-label { color: #b3b3b3; font-size: 0.82rem; margin-bottom: 3px; }
 .emotion-bar-bg {
@@ -140,16 +150,6 @@ html, body, [class*="css"] {
     border-radius: 50px; padding: 3px 12px; font-size: 0.75rem;
     display: inline-block; margin: 2px;
 }
-.spotify-login-btn {
-    background: #1DB954; color: #000000 !important;
-    padding: 0.8rem 2rem; border-radius: 50px;
-    font-weight: 700; font-size: 0.95rem;
-    text-decoration: none; display: inline-block;
-    letter-spacing: 0.5px; text-align: center;
-    width: 100%; box-sizing: border-box;
-}
-.spotify-login-btn:hover { background: #1ed760; }
-
 .spotify-badge {
     background: #1a2e1a; border: 1px solid #1DB954;
     border-radius: 50px; padding: 4px 14px;
@@ -243,7 +243,7 @@ def render_auth():
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Spotify login
+        # Spotify login card
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="auth-title">🎵 Connect with Spotify</div>', unsafe_allow_html=True)
         st.markdown("""
@@ -256,13 +256,11 @@ def render_auth():
         try:
             oauth = get_spotify_oauth()
             auth_url = oauth.get_authorize_url()
-            st.markdown(f"""
-            <div style="text-align:center;margin:0.5rem 0 1rem 0;">
-                <a href="{auth_url}" target="_top" class="spotify-login-btn">
-                    🎵 &nbsp; Login with Spotify
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
+            st.link_button(
+                "🎵   Login with Spotify",
+                auth_url,
+                use_container_width=True
+            )
         except Exception as e:
             st.error(f"Could not generate Spotify login URL: {str(e)}")
 
@@ -450,7 +448,6 @@ def render_main():
 
                     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-                    # Save session
                     try:
                         save_session(
                             user_id=user["id"],
@@ -463,7 +460,6 @@ def render_main():
                     except Exception:
                         pass
 
-                    # Feedback
                     if not st.session_state.feedback_given:
                         st.markdown('<div style="text-align:center;color:#a0a0a0;font-size:0.85rem;padding:0.5rem 0;">Did this playlist shift your mood?</div>', unsafe_allow_html=True)
                         col1, col2, col3 = st.columns(3)
