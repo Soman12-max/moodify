@@ -258,7 +258,7 @@ def render_auth():
             auth_url = oauth.get_authorize_url()
             st.markdown(f"""
             <div style="text-align:center;margin:0.5rem 0 1rem 0;">
-                <a href="{auth_url}" target="_self" class="spotify-login-btn">
+                <a href="{auth_url}" target="_top" class="spotify-login-btn">
                     🎵 &nbsp; Login with Spotify
                 </a>
             </div>
