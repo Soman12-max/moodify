@@ -1,15 +1,13 @@
 import os
-import spotipy
 import random
-from spotipy.oauth2 import SpotifyClientCredentials
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
 from dotenv import load_dotenv
-from location import build_local_query, split_playlist
 
 load_dotenv()
 
-# ── Dynamic mood search terms ─────────────────────────────────
-# Built around emotion category + target mood combinations
-# Uses richer, more varied queries than the old fixed keyword sets
+# ── Scopes needed for full playback and user data ─────────────
+SPOTIFY_SCOPES = "streaming user-read-email user-read-private playlist-modify-public playlist-modify-private"
 
 MOOD_QUERIES = {
     "sadness": {
@@ -115,25 +113,37 @@ MOOD_QUERIES = {
 }
 
 
-def get_spotify_client():
-    """Creates Spotify client reading credentials at call time."""
-    client_id = None
-    client_secret = None
+def get_spotify_oauth():
+    """Returns SpotifyOAuth instance for user login flow."""
+    try:
+        import streamlit as st
+        client_id = st.secrets["SPOTIPY_CLIENT_ID"]
+        client_secret = st.secrets["SPOTIPY_CLIENT_SECRET"]
+        redirect_uri = st.secrets["SPOTIPY_REDIRECT_URI"]
+    except Exception:
+        client_id = os.getenv("SPOTIPY_CLIENT_ID")
+        client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
+        redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
 
+    return SpotifyOAuth(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+        scope=SPOTIFY_SCOPES,
+        cache_path=None,
+        show_dialog=True
+    )
+
+
+def get_spotify_client_credentials():
+    """Fallback client credentials for when user is not logged in."""
     try:
         import streamlit as st
         client_id = st.secrets["SPOTIPY_CLIENT_ID"]
         client_secret = st.secrets["SPOTIPY_CLIENT_SECRET"]
     except Exception:
-        pass
-
-    if not client_id:
         client_id = os.getenv("SPOTIPY_CLIENT_ID")
-    if not client_secret:
         client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
-
-    if not client_id or not client_secret:
-        raise ValueError("Spotify credentials not found.")
 
     auth_manager = SpotifyClientCredentials(
         client_id=client_id,
@@ -142,13 +152,16 @@ def get_spotify_client():
     return spotipy.Spotify(auth_manager=auth_manager)
 
 
+def get_spotify_from_token(token_info):
+    """Creates Spotify client from user OAuth token."""
+    return spotipy.Spotify(auth=token_info['access_token'])
+
+
 def search_tracks(sp, query, limit=8, offset=None):
     """Executes a Spotify search and returns formatted track list."""
     try:
-        # Random offset makes Spotify return different results each time
         if offset is None:
             offset = random.randint(0, 40)
-
         results = sp.search(q=query, type="track", limit=limit, offset=offset)
         tracks = []
         for track in results["tracks"]["items"]:
@@ -159,8 +172,6 @@ def search_tracks(sp, query, limit=8, offset=None):
                 "url": track["external_urls"]["spotify"],
                 "popularity": track.get("popularity", 0)
             })
-
-        # Shuffle the results so order varies each session
         random.shuffle(tracks)
         return tracks
     except Exception:
@@ -168,76 +179,54 @@ def search_tracks(sp, query, limit=8, offset=None):
 
 
 def build_global_query(mood_result, target_mood, keywords):
-    """
-    Builds a dynamic global search query using:
-    - Primary emotion category
-    - KeyBERT extracted keywords
-    - Target mood
-    - Random query rotation
-    """
+    """Builds a dynamic global search query."""
     category = mood_result.get("primary_category", "neutral")
-
-    # Get query options for this emotion/target combination
     query_options = MOOD_QUERIES.get(category, MOOD_QUERIES["neutral"])
     base_queries = query_options.get(target_mood, query_options["calm"])
-
-    # Randomly pick from available query options each time
     base_query = random.choice(base_queries)
-
-    # Enrich query with extracted keywords if available
     if keywords:
-        # Randomly use 1 or 2 keywords for variety
         num_keywords = random.randint(1, min(2, len(keywords)))
         selected_keywords = random.sample(keywords, num_keywords)
-        keyword_str = " ".join(selected_keywords)
-        enriched_query = f"{base_query} {keyword_str}"
-    else:
-        enriched_query = base_query
-
-    return enriched_query
+        return f"{base_query} {' '.join(selected_keywords)}"
+    return base_query
 
 
-def get_recommendations(mood_result, target_mood, country="Global", limit=8):
+def get_recommendations(mood_result, target_mood, country="Global", limit=8, token_info=None):
     """
     Main recommendation function.
-    Fetches global and local tracks then merges into a 50/50 playlist.
-
-    Args:
-        mood_result: dict returned by detect_mood()
-        target_mood: "calm", "focus", or "energise"
-        country: user's selected country
-        limit: total number of tracks to return
-
-    Returns:
-        list of track dicts or dict with error key
+    Uses OAuth token if available, falls back to client credentials.
     """
     try:
-        sp = get_spotify_client()
-        keywords = mood_result.get("keywords", [])
+        from location import build_local_query, split_playlist
 
-        # ── Global query ──────────────────────────────────────
+        if token_info:
+            sp = get_spotify_from_token(token_info)
+        else:
+            sp = get_spotify_client_credentials()
+
+        keywords = mood_result.get("keywords", [])
         global_query = build_global_query(mood_result, target_mood, keywords)
         global_tracks = search_tracks(sp, global_query, limit=limit)
 
-        # ── Local query ───────────────────────────────────────
-        local_query = build_local_query(country, mood_result.get("primary_category", "neutral"), target_mood)
+        local_query = build_local_query(
+            country,
+            mood_result.get("primary_category", "neutral"),
+            target_mood
+        )
         local_tracks = []
         if local_query:
-            local_tracks = search_tracks(sp, local_query, limit=limit // 2, offset=random.randint(0, 20))
+            local_tracks = search_tracks(
+                sp, local_query,
+                limit=limit // 2,
+                offset=random.randint(0, 20)
+            )
 
-        # ── Merge into 50/50 playlist ─────────────────────────
         final_tracks = split_playlist(global_tracks, local_tracks, total=limit)
-
-        # Tag each track as local or global for UI display
         local_uris = {t['uri'] for t in local_tracks}
         for track in final_tracks:
             track['is_local'] = track['uri'] in local_uris
 
         return final_tracks
 
-    except ValueError as e:
-        return {"error": str(e)}
-    except spotipy.exceptions.SpotifyException as e:
-        return {"error": f"Spotify API error: {str(e)}"}
     except Exception as e:
         return {"error": f"Unexpected error: {str(e)}"}
