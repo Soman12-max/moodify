@@ -243,7 +243,6 @@ def render_auth():
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Spotify login card
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="auth-title">🎵 Connect with Spotify</div>', unsafe_allow_html=True)
         st.markdown("""
@@ -273,7 +272,6 @@ def render_auth():
         """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # Email login / signup
         mode = st.radio("", ["Login", "Sign Up"], horizontal=True, label_visibility="collapsed")
         st.session_state.auth_mode = mode.lower().replace(" ", "_")
 
@@ -326,13 +324,13 @@ def render_main():
     country = user.get("country", "Global")
     spotify_connected = st.session_state.spotify_token is not None
 
+    # Fix: build badge separately to avoid f-string HTML rendering issues
+    spotify_badge = "<span class='spotify-badge'>🎵 Spotify Connected</span>" if spotify_connected else ""
+
     st.markdown(f"""
     <div class="hero">
         <div class="hero-title">Moodify</div>
-        <div class="hero-sub">
-            Welcome back, {user['username']} 👋
-            {"&nbsp;&nbsp;<span class='spotify-badge'>🎵 Spotify Connected</span>" if spotify_connected else ""}
-        </div>
+        <div class="hero-sub">Welcome back, {user['username']} 👋 &nbsp; {spotify_badge}</div>
     </div>
     """, unsafe_allow_html=True)
 
